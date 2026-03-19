@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: bandhu-ai-backend
+    runtime: python
+    repo: https://github.com/sankuuu1/chatbot-backend
+    branch: master
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    plan: free
+    envVars:
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: PYTHON_VERSION
+        value: 3.11.0
