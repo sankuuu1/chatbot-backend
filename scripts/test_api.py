@@ -18,7 +18,7 @@ else:
 # 3. Test Model Connection
 print("\nAttempting to connect to Gemini...")
 try:
-    llm = ChatGoogleGenerativeAI(model="gemini-pro", google_api_key=api_key)
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", google_api_key=api_key)
     response = llm.invoke("Hello, say 'API Working' if you hear me.")
     print("\nSUCCESS! Model Response:")
     print(response.content)

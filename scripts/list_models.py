@@ -1,5 +1,6 @@
-import google.generativeai as genai
+# Note: Run 'pip install google-generativeai' to use this diagnostic script standalone.
 import os
+import google.generativeai as genai
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -14,7 +15,7 @@ genai.configure(api_key=api_key)
 print("Listing available models...")
 try:
     for m in genai.list_models():
-        if 'generateContent' in m.supported_generation_methods:
+        if "generateContent" in m.supported_generation_methods:
             print(m.name)
 except Exception as e:
     print(f"Error listing models: {e}")

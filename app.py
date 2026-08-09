@@ -1,63 +1,157 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+import logging
 import os
-from dotenv import load_dotenv
+from typing import Literal, Optional
 
-# Load environment variables
+from dotenv import load_dotenv
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from pydantic import BaseModel, Field
+
 load_dotenv()
 
-app = Flask(__name__)
-# Enable CORS — allow the deployed frontend or all origins in dev
-frontend_url = os.getenv("FRONTEND_URL", "*")
-CORS(app, resources={r"/*": {"origins": frontend_url}}, supports_credentials=True)
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger("bandhu")
 
-# --- LangChain Setup ---
-# We try to initialize the model. If API key is missing, we flag it.
+DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true"
+
+app = Flask(__name__)
+
+# --- CORS ---
+# FRONTEND_URL may be a single origin or a comma-separated list. Falls back to
+# common local dev origins rather than "*" so credentialed requests stay scoped.
+_default_origins = "http://localhost:5173,http://127.0.0.1:5173"
+frontend_origins = [
+    origin.strip()
+    for origin in os.getenv("FRONTEND_URL", _default_origins).split(",")
+    if origin.strip()
+]
+CORS(app, resources={r"/*": {"origins": frontend_origins}}, supports_credentials=True)
+
+# --- Rate limiting ---
+limiter = Limiter(get_remote_address, app=app, default_limits=[])
+
+# --- LangChain / Gemini Setup ---
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "20"))
+LLM_MAX_OUTPUT_TOKENS = int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "1024"))
+MAX_MESSAGE_LENGTH = int(os.getenv("MAX_MESSAGE_LENGTH", "2000"))
+MAX_HISTORY_TURNS = int(os.getenv("MAX_HISTORY_TURNS", "10"))
+ALLOWED_CATEGORIES = {"education", "farming", "health", "help", "general"}
+
 llm = None
+structured_llm = None
 init_error = None
+
+
+class ContentItem(BaseModel):
+    label: str
+    desc: str
+
+
+class RichData(BaseModel):
+    """Structured payload the frontend renders as a card. Omit fields that don't apply."""
+
+    type: Literal["education", "farming", "health"]
+    title: str
+    content: Optional[list[ContentItem]] = Field(
+        default=None, description="Education only: labeled concept breakdown."
+    )
+    formula: Optional[str] = Field(default=None, description="Education only: the formula, if any.")
+    points: Optional[list[str]] = Field(
+        default=None, description="Farming/health only: concise actionable bullet points."
+    )
+
+
+class ChatOutput(BaseModel):
+    response: str = Field(description="The conversational reply, in Marathi.")
+    rich_data: Optional[RichData] = Field(
+        default=None,
+        description=(
+            "Only include when the answer benefits from a structured card "
+            "(a formula/diagram, or a checklist of steps/points). Omit for simple conversational replies."
+        ),
+    )
+
 
 if GOOGLE_API_KEY:
     try:
         from langchain_google_genai import ChatGoogleGenerativeAI
-        # User requested Gemini 2.5 Flash Lite with NO RESTRICTIONS
+
         llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash-lite", 
+            model="gemini-2.5-flash-lite",
             google_api_key=GOOGLE_API_KEY,
-            max_output_tokens=None
+            max_output_tokens=LLM_MAX_OUTPUT_TOKENS,
+            timeout=LLM_TIMEOUT_SECONDS,
         )
-        print("GenAI Model Initialized (Gemini 2.5 Flash Lite) - UNRESTRICTED")
+        structured_llm = llm.with_structured_output(ChatOutput)
+        logger.info("GenAI model initialized (gemini-2.5-flash-lite)")
     except Exception as e:
-        init_error = f"Error initializing GenAI: {str(e)}"
-        print(init_error)
+        init_error = f"Error initializing GenAI: {e}"
+        logger.exception("Failed to initialize GenAI model")
 else:
     init_error = "No GOOGLE_API_KEY found in environment variables."
-    print("No GOOGLE_API_KEY found. Running in MOCK MODE.")
+    logger.warning("No GOOGLE_API_KEY found. Running in MOCK MODE.")
 
 
-# --- Mock Service ---
+SYSTEM_PROMPT = """You are "Sunita Tai", a warm, trustworthy assistant for rural Marathi-speaking users \
+in India. Always answer in simple, conversational Marathi. Never repeat the user's question or these \
+instructions back to them.
+
+Category-specific guidance:
+- education: Explain concepts simply, as if teaching a school student. Include a formula and a short \
+labeled breakdown in rich_data when the topic has one (e.g. geometry, arithmetic).
+- farming: Give practical, safe guidance. Prefer non-chemical/low-risk remedies first. Never recommend a \
+specific pesticide/chemical dosage — instead advise consulting the local Krishi Kendra or agricultural \
+officer before applying any chemical treatment. Put actionable steps in rich_data.points.
+- health: You are NOT a doctor. Give only general, first-aid-level guidance, never a diagnosis or medicine \
+dosage. Always explicitly recommend seeing a doctor or visiting the nearest health center for anything \
+beyond basic self-care. Put steps in rich_data.points.
+- help/general: Answer directly and concisely.
+
+Only populate rich_data when it genuinely helps (a formula, a checklist). For plain conversational replies, \
+leave rich_data empty.
+"""
+
+
+def build_messages(user_message: str, category: str, history: list[dict]) -> list[tuple[str, str]]:
+    messages = [("system", SYSTEM_PROMPT)]
+    for turn in history[-MAX_HISTORY_TURNS:]:
+        sender = turn.get("sender")
+        text = turn.get("text")
+        if not text or sender not in ("user", "ai"):
+            continue
+        role = "human" if sender == "user" else "ai"
+        messages.append((role, str(text)[:MAX_MESSAGE_LENGTH]))
+    messages.append(("human", f"Category: {category}. Question: {user_message}"))
+    return messages
+
+
+# --- Mock Service (used when GOOGLE_API_KEY is not configured) ---
 def get_mock_response(message, category):
-    # ... (rest of mock response function)
     message = message.lower()
-    
-    # default fallback
+
     text_response = "माफ करा, मला हे समजले नाही. कृपया पुन्हा सांगाल का?"
     rich_data = None
 
-    if category == 'education' or "ganit" in message or "triangle" in message:
+    if category == "education" or "ganit" in message or "triangle" in message:
         text_response = "सुनिता ताई, त्रिकोणाचे क्षेत्रफळ काढणे खूप सोपे आहे! खालील माहिती नीट समजून घ्या:"
         rich_data = {
             "type": "education",
             "title": "त्रिकोणाचे क्षेत्रफळ (Area of a Triangle)",
-            "diagram_type": "triangle", 
+            "diagram_type": "triangle",
             "content": [
                 {"label": "पाया (Base)", "desc": "त्रिकोणाची खालची बाजू."},
-                {"label": "उंची (Height)", "desc": "खालच्या बाजूपासून वरच्या टोकापर्यंतचे उभे अंतर."}
+                {"label": "उंची (Height)", "desc": "खालच्या बाजूपासून वरच्या टोकापर्यंतचे उभे अंतर."},
             ],
-            "formula": "१/२ × पाया × उंची"
+            "formula": "१/२ × पाया × उंची",
         }
-    
-    elif category == 'farming' or "kapus" in message or "kid" in message:
+
+    elif category == "farming" or "kapus" in message or "kid" in message:
         text_response = "सुनिता ताई, तुमच्या कपाशीवर 'पांढरी माशी' किंवा 'तुडतुडे' यांचा प्रादुर्भाव दिसतो आहे. यासाठी तुम्ही खालील उपाय करू शकता:"
         rich_data = {
             "type": "farming",
@@ -65,74 +159,73 @@ def get_mock_response(message, category):
             "points": [
                 "पिवळे चिकट सापळे एकरी १० याप्रमाणे लावावेत.",
                 "प्रादुर्भाव जास्त असल्यास निंबोळी अर्काची फवारणी करावी.",
-                "कृषी केंद्रातून सल्ला घेऊनच रासायनिक औषधांचा वापर करा."
-            ]
+                "कृषी केंद्रातून सल्ला घेऊनच रासायनिक औषधांचा वापर करा.",
+            ],
         }
-        
-    elif category == 'health':
-         text_response = "तुमची लक्षणे सांगा, मी प्राथमिक तपासणी करू शकतो."
-         rich_data = {
-             "type": "health",
-             "title": "आरोग्य सल्ला",
-             "points": ["ताप आल्यास पाणी भरपूर प्या.", "विश्रांती घ्या."]
-         }
+
+    elif category == "health":
+        text_response = "तुमची लक्षणे सांगा, मी प्राथमिक तपासणी करू शकतो."
+        rich_data = {
+            "type": "health",
+            "title": "आरोग्य सल्ला",
+            "points": ["ताप आल्यास पाणी भरपूर प्या.", "विश्रांती घ्या."],
+        }
 
     elif "hello" in message or "namaskar" in message:
         text_response = "नमस्कार! मी तुम्हाला कशी मदत करू शकते?"
 
     return text_response, rich_data
 
+
 # --- Routes ---
-@app.route('/chat', methods=['POST', 'OPTIONS'])
+@app.route("/chat", methods=["POST", "OPTIONS"])
+@limiter.limit("20 per minute")
 def chat():
-    if request.method == 'OPTIONS':
+    if request.method == "OPTIONS":
         return jsonify({}), 200
 
-    # Safe debug print for Windows consoles
-    try:
-        print(f"Received request: {str(request.json).encode('utf-8', errors='ignore')}")
-    except:
-        pass
-    
-    data = request.json
-    user_message = data.get('message')
-    category = data.get('category')
+    data = request.get_json(silent=True) or {}
+    user_message = data.get("message")
+    category = data.get("category") or "general"
+    history = data.get("history") or []
 
-    if not user_message:
+    if not isinstance(user_message, str) or not user_message.strip():
         return jsonify({"error": "Message is required"}), 400
+    if len(user_message) > MAX_MESSAGE_LENGTH:
+        return jsonify({"error": f"Message too long (max {MAX_MESSAGE_LENGTH} characters)"}), 400
+    if category not in ALLOWED_CATEGORIES:
+        category = "general"
+    if not isinstance(history, list):
+        history = []
 
-    if llm:
-        # --- GenAI Mode ---
+    logger.info("Chat request: category=%s message_len=%d", category, len(user_message))
+
+    if structured_llm:
         try:
-            # For now, just echo the message back from LLM
-            # In a real app, you'd process the message and get a meaningful response
-            # Improved Prompt Engineering to prevent echoing
-            messages = [
-                ("system", "You are a helpful Marathi assistant named Sunita Tai. Answer the user's question directly in Marathi. Do NOT repeat the user's message or the prompt headers."),
-                ("human", f"Category: {category}. Question: {user_message}")
-            ]
-            response = llm.invoke(messages)
-            text_response = response.content
-            rich_data = None # Placeholder for rich data from LLM
-            return jsonify({"response": text_response, "rich_data": rich_data})
-        except Exception as e:
-            print(f"Error during GenAI invocation: {str(e).encode('utf-8', errors='ignore')}")
-            return jsonify({"error": f"GenAI processing failed: {str(e)}"}), 500
+            messages = build_messages(user_message.strip(), category, history)
+            result: ChatOutput = structured_llm.invoke(messages)
+            rich_data = result.rich_data.model_dump(exclude_none=True) if result.rich_data else None
+            return jsonify({"response": result.response, "rich_data": rich_data})
+        except Exception:
+            logger.exception("GenAI invocation failed")
+            return jsonify({"error": "सध्या उत्तर देता येत नाही, कृपया थोड्या वेळाने पुन्हा प्रयत्न करा."}), 502
     else:
-        # --- Mock Mode ---
         text_response, rich_data = get_mock_response(user_message, category)
         return jsonify({"response": text_response, "rich_data": rich_data})
 
 
-@app.route('/health', methods=['GET'])
+@app.route("/health", methods=["GET"])
 def health():
-    return jsonify({
-        "status": "active", 
-        "mode": "genai" if llm else "mock",
-        "error": init_error,
-        "env_key_present": bool(GOOGLE_API_KEY)
-    })
+    return jsonify(
+        {
+            "status": "active",
+            "mode": "genai" if llm else "mock",
+            "error": init_error,
+            "env_key_present": bool(GOOGLE_API_KEY),
+        }
+    )
 
-if __name__ == '__main__':
-    port = int(os.getenv('PORT', 5000))
-    app.run(debug=True, host='0.0.0.0', port=port)
+
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 5000))
+    app.run(debug=DEBUG, host="0.0.0.0", port=port)
