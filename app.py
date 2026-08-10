@@ -214,6 +214,20 @@ def chat():
         return jsonify({"response": text_response, "rich_data": rich_data})
 
 
+DEFAULT_SETTINGS = {
+    "name": "संतोष जाधव",
+    "phone": "+919876543210",
+    "speech_speed": 1.0,
+    "auto_play_speech": True,
+    "notifications_enabled": True,
+    "crop_alerts_enabled": True,
+    "dark_mode": False,
+    "save_history": True,
+}
+
+user_settings = dict(DEFAULT_SETTINGS)
+
+
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify(
@@ -224,6 +238,34 @@ def health():
             "env_key_present": bool(GOOGLE_API_KEY),
         }
     )
+
+
+@app.route("/api/settings", methods=["GET", "POST", "OPTIONS"])
+def handle_settings():
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+
+    if request.method == "GET":
+        return jsonify(user_settings), 200
+
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        for key in DEFAULT_SETTINGS.keys():
+            if key in data:
+                user_settings[key] = data[key]
+        logger.info("Settings updated: %s", user_settings)
+        return jsonify({"status": "success", "settings": user_settings}), 200
+
+
+@app.route("/api/settings/reset", methods=["POST", "OPTIONS"])
+def reset_settings():
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+
+    global user_settings
+    user_settings = dict(DEFAULT_SETTINGS)
+    logger.info("Settings reset to defaults")
+    return jsonify({"status": "success", "settings": user_settings}), 200
 
 
 if __name__ == "__main__":
