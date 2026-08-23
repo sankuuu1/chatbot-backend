@@ -35,8 +35,13 @@ CORS(app, resources={r"/*": {"origins": frontend_origins}}, supports_credentials
 # --- Rate limiting ---
 limiter = Limiter(get_remote_address, app=app, default_limits=[])
 
-# --- LangChain / Gemini Setup ---
+# --- LangChain / LLM Setup (Groq & Gemini) ---
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "auto").lower()
+
 LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "20"))
 LLM_MAX_OUTPUT_TOKENS = int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "1024"))
 MAX_MESSAGE_LENGTH = int(os.getenv("MAX_MESSAGE_LENGTH", "2000"))
@@ -45,6 +50,8 @@ ALLOWED_CATEGORIES = {"education", "farming", "health", "help", "general"}
 
 llm = None
 structured_llm = None
+active_provider = "mock"
+active_model = None
 init_error = None
 
 
@@ -78,24 +85,48 @@ class ChatOutput(BaseModel):
     )
 
 
-if GOOGLE_API_KEY:
+# 1. Try Groq provider if selected or key is present
+if LLM_PROVIDER == "groq" or (LLM_PROVIDER == "auto" and GROQ_API_KEY):
+    try:
+        from langchain_groq import ChatGroq
+
+        llm = ChatGroq(
+            model=GROQ_MODEL,
+            groq_api_key=GROQ_API_KEY,
+            max_tokens=LLM_MAX_OUTPUT_TOKENS,
+            timeout=LLM_TIMEOUT_SECONDS,
+        )
+        structured_llm = llm.with_structured_output(ChatOutput)
+        active_provider = "groq"
+        active_model = GROQ_MODEL
+        logger.info("Groq GenAI model initialized (%s)", GROQ_MODEL)
+    except Exception as e:
+        init_error = f"Error initializing Groq GenAI: {e}"
+        logger.exception("Failed to initialize Groq model")
+
+# 2. Try Gemini provider if Groq wasn't initialized
+if not llm and (LLM_PROVIDER in ("gemini", "auto") and GOOGLE_API_KEY):
     try:
         from langchain_google_genai import ChatGoogleGenerativeAI
 
         llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash-lite",
+            model=GEMINI_MODEL,
             google_api_key=GOOGLE_API_KEY,
             max_output_tokens=LLM_MAX_OUTPUT_TOKENS,
             timeout=LLM_TIMEOUT_SECONDS,
         )
         structured_llm = llm.with_structured_output(ChatOutput)
-        logger.info("GenAI model initialized (gemini-2.5-flash-lite)")
+        active_provider = "gemini"
+        active_model = GEMINI_MODEL
+        logger.info("Google GenAI model initialized (%s)", GEMINI_MODEL)
     except Exception as e:
-        init_error = f"Error initializing GenAI: {e}"
-        logger.exception("Failed to initialize GenAI model")
-else:
-    init_error = "No GOOGLE_API_KEY found in environment variables."
-    logger.warning("No GOOGLE_API_KEY found. Running in MOCK MODE.")
+        init_error = f"Error initializing Google GenAI: {e}"
+        logger.exception("Failed to initialize Gemini model")
+
+if not llm:
+    if not init_error:
+        init_error = "No valid LLM API key (GROQ_API_KEY or GOOGLE_API_KEY) found in environment variables."
+    logger.warning("%s Running in MOCK MODE.", init_error)
 
 
 SYSTEM_PROMPT = """You are "Sunita Tai", a warm, trustworthy assistant for rural Marathi-speaking users \
@@ -198,9 +229,43 @@ def chat():
     if not isinstance(history, list):
         history = []
 
-    logger.info("Chat request: category=%s message_len=%d", category, len(user_message))
+    logger.info("Chat request: category=%s message_len=%d provider=%s", category, len(user_message), active_provider)
 
-    if structured_llm:
+    if active_provider == "groq" and llm:
+        try:
+            messages = build_messages(user_message.strip(), category, history)
+            result = llm.invoke(messages)
+            content_str = str(result.content).strip()
+
+            # Strip reasoning model think tags if present
+            if "</think>" in content_str:
+                content_str = content_str.split("</think>")[-1].strip()
+
+            if content_str.startswith("```"):
+                parts = content_str.split("```")
+                if len(parts) >= 2:
+                    content_str = parts[1]
+                    if content_str.startswith("json"):
+                        content_str = content_str[4:].strip()
+
+            rich_data = None
+            try:
+                import json
+                parsed = json.loads(content_str)
+                if isinstance(parsed, dict):
+                    text_response = parsed.get("response") or content_str
+                    rich_data = parsed.get("rich_data")
+                else:
+                    text_response = content_str
+            except Exception:
+                text_response = content_str
+
+            return jsonify({"response": text_response, "rich_data": rich_data})
+        except Exception:
+            logger.exception("Groq GenAI invocation failed")
+            return jsonify({"error": "सध्या उत्तर देता येत नाही, कृपया थोड्या वेळाने पुन्हा प्रयत्न करा."}), 502
+
+    elif structured_llm:
         try:
             messages = build_messages(user_message.strip(), category, history)
             result: ChatOutput = structured_llm.invoke(messages)
@@ -233,9 +298,12 @@ def health():
     return jsonify(
         {
             "status": "active",
-            "mode": "genai" if llm else "mock",
+            "provider": active_provider,
+            "model": active_model,
+            "mode": active_provider,
             "error": init_error,
-            "env_key_present": bool(GOOGLE_API_KEY),
+            "groq_key_present": bool(GROQ_API_KEY),
+            "google_key_present": bool(GOOGLE_API_KEY),
         }
     )
 
