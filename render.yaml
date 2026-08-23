@@ -1,20 +1,13 @@
 services:
   - type: web
-    name: bandhu-ai-backend
+    name: chatbot-backend
     runtime: python
-    repo: https://github.com/sankuuu1/chatbot-backend
-    branch: master
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
-    plan: free
+    startCommand: gunicorn app:app --timeout 60
     envVars:
-      - key: GROQ_API_KEY
-        sync: false
       - key: GROQ_MODEL
         value: qwen/qwen3.6-27b
       - key: LLM_PROVIDER
         value: groq
       - key: FRONTEND_URL
         value: "*"
-      - key: PYTHON_VERSION
-        value: 3.11.0
