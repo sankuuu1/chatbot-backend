@@ -129,7 +129,7 @@ if not llm:
     logger.warning("%s Running in MOCK MODE.", init_error)
 
 
-SYSTEM_PROMPT = """You are "Sunita Tai", a warm, trustworthy assistant for rural Marathi-speaking users \
+SYSTEM_PROMPT = """You are "Bandhu" (बंधू), a warm, trustworthy assistant for rural Marathi-speaking users \
 in India. Always answer in simple, conversational Marathi. Never repeat the user's question or these \
 instructions back to them.
 
@@ -170,7 +170,7 @@ def get_mock_response(message, category):
     rich_data = None
 
     if category == "education" or "ganit" in message or "triangle" in message:
-        text_response = "सुनिता ताई, त्रिकोणाचे क्षेत्रफळ काढणे खूप सोपे आहे! खालील माहिती नीट समजून घ्या:"
+        text_response = "त्रिकोणाचे क्षेत्रफळ काढणे खूप सोपे आहे! खालील माहिती नीट समजून घ्या:"
         rich_data = {
             "type": "education",
             "title": "त्रिकोणाचे क्षेत्रफळ (Area of a Triangle)",
@@ -183,7 +183,7 @@ def get_mock_response(message, category):
         }
 
     elif category == "farming" or "kapus" in message or "kid" in message:
-        text_response = "सुनिता ताई, तुमच्या कपाशीवर 'पांढरी माशी' किंवा 'तुडतुडे' यांचा प्रादुर्भाव दिसतो आहे. यासाठी तुम्ही खालील उपाय करू शकता:"
+        text_response = "तुमच्या कपाशीवर 'पांढरी माशी' किंवा 'तुडतुडे' यांचा प्रादुर्भाव दिसतो आहे. यासाठी तुम्ही खालील उपाय करू शकता:"
         rich_data = {
             "type": "farming",
             "title": "कापसावरील कीड नियंत्रण",
