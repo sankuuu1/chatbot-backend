@@ -336,6 +336,114 @@ def reset_settings():
     return jsonify({"status": "success", "settings": user_settings}), 200
 
 
+@app.route("/api/daily-info", methods=["GET", "OPTIONS"])
+def daily_info():
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+
+    weather_data = {
+        "temperature": 28,
+        "condition": "ढगाळ वातावरण",
+        "rain_probability": 70,
+        "location": "नागपूर, महाराष्ट्र",
+    }
+
+    try:
+        import urllib.request
+        import json
+
+        url = "https://api.open-meteo.com/v1/forecast?latitude=21.1458&longitude=79.0882&current=temperature_2m,relative_humidity_2m,weather_code&hourly=precipitation_probability&forecast_days=5"
+        with urllib.request.urlopen(url, timeout=3) as resp:
+            raw = json.loads(resp.read().decode())
+            curr = raw.get("current", {})
+            hourly_rain = raw.get("hourly", {}).get("precipitation_probability", [])
+            if curr.get("temperature_2m") is not None:
+                weather_data["temperature"] = round(curr.get("temperature_2m"))
+            if hourly_rain:
+                weather_data["rain_probability"] = max(hourly_rain[:12]) if len(hourly_rain) >= 12 else hourly_rain[0]
+    except Exception as e:
+        logger.warning("Failed to fetch live weather from Open-Meteo, using cached defaults: %s", e)
+
+    response_payload = {
+        "location": weather_data["location"],
+        "weather": {
+            "temperature": weather_data["temperature"],
+            "condition": weather_data["condition"],
+            "rain_probability": weather_data["rain_probability"],
+            "unit": "अंश सेल्सिअस",
+            "time_label": "आज",
+        },
+        "forecast": [
+            {"day": "आज", "high": 31, "low": 23, "icon": "🌧️"},
+            {"day": "उद्या", "high": 30, "low": 23, "icon": "🌧️"},
+            {"day": "गुरु", "high": 32, "low": 24, "icon": "⛅"},
+            {"day": "शुक्र", "high": 30, "low": 22, "icon": "⛅"},
+        ],
+        "advisory": {
+            "title": "शेतकऱ्यांसाठी सूचना",
+            "text": "आज पेरणी किंवा खत देण्यासाठी योग्य दिवस नाही.",
+        },
+        "articles": [
+            {
+                "id": "1",
+                "category": "शेती",
+                "category_key": "farming",
+                "tag_color": "#E8F5E9",
+                "tag_text_color": "#2E7D32",
+                "title": "सोयाबीनच्या बाजारभावात वाढ",
+                "subtitle": "विदर्भातील बाजारभावात आज बदल",
+                "time_ago": "२ तासांपूर्वी",
+                "image_url": "https://images.unsplash.com/photo-1599599810694-b5b37304c041?auto=format&fit=crop&w=300&q=80",
+            },
+            {
+                "id": "2",
+                "category": "शिक्षण",
+                "category_key": "education",
+                "tag_color": "#F3E5F5",
+                "tag_text_color": "#7B1FA2",
+                "title": "शिष्यवृत्ती अर्ज करण्याची अंतिम तारीख वाढली",
+                "subtitle": "अर्ज करण्याची नवीन तारीख ३१ जुलै",
+                "time_ago": "४ तासांपूर्वी",
+                "image_url": "https://images.unsplash.com/photo-1577896851231-70ef18881754?auto=format&fit=crop&w=300&q=80",
+            },
+            {
+                "id": "3",
+                "category": "सरकारी योजना",
+                "category_key": "schemes",
+                "tag_color": "#FFF3E0",
+                "tag_text_color": "#E65100",
+                "title": "पीएम किसान योजनेचा १६ वा हप्ता लवकरच",
+                "subtitle": "लाभार्थ्यांच्या खात्यात थेट जमा",
+                "time_ago": "६ तासांपूर्वी",
+                "image_url": "https://images.unsplash.com/photo-1592982537447-7440770cbfc9?auto=format&fit=crop&w=300&q=80",
+            },
+            {
+                "id": "4",
+                "category": "स्थानिक",
+                "category_key": "local",
+                "tag_color": "#E3F2FD",
+                "tag_text_color": "#1565C0",
+                "title": "नागपूर विभागात पुढील ३ दिवस मुसळधार पावसाचा इशारा",
+                "subtitle": "हवामान खात्याचा यलो अलर्ट जारी",
+                "time_ago": "१ तासापूर्वी",
+                "image_url": "https://images.unsplash.com/photo-1515694346937-94d85e41e6f0?auto=format&fit=crop&w=300&q=80",
+            },
+            {
+                "id": "5",
+                "category": "रोजगार",
+                "category_key": "jobs",
+                "tag_color": "#EFEBE9",
+                "tag_text_color": "#4E342E",
+                "title": "कृषी विभागात ५०० जागांसाठी नोकरभरती जाहीर",
+                "subtitle": "ऑनलाइन अर्ज प्रक्रिया सुरू",
+                "time_ago": "५ तासांपूर्वी",
+                "image_url": "https://images.unsplash.com/photo-1521737711867-e3b97375f902?auto=format&fit=crop&w=300&q=80",
+            },
+        ],
+    }
+    return jsonify(response_payload), 200
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     app.run(debug=DEBUG, host="0.0.0.0", port=port)
