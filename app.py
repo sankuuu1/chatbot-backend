@@ -316,6 +316,7 @@ def chat():
             except Exception:
                 text_response = content_str
 
+            return jsonify({"response": text_response, "rich_data": rich_data}), 200
         except Exception as e:
             logger.exception("Groq GenAI invocation failed: %s", e)
             mock_text, mock_rich = get_mock_response(user_message, category)
