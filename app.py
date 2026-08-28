@@ -341,8 +341,11 @@ def chat():
             return jsonify({"response": text_response, "rich_data": rich_data}), 200
         except Exception as e:
             logger.exception("Groq GenAI invocation failed: %s", e)
-            mock_text, mock_rich = get_mock_response(user_message, category)
-            return jsonify({"response": mock_text, "rich_data": mock_rich, "llm_fallback": True}), 200
+            return jsonify({
+                "response": f"Groq AI Error: {str(e)}. (Please verify your GROQ_API_KEY in Render settings)",
+                "groq_error": str(e),
+                "rich_data": None
+            }), 200
 
     elif structured_llm:
         try:
