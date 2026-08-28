@@ -310,42 +310,55 @@ def chat():
         }), 200
 
     if active_provider == "groq" and llm:
+        messages = build_messages(user_message.strip(), category, history)
+        success_result = None
+
+        # 1. Try primary configured model
         try:
-            messages = build_messages(user_message.strip(), category, history)
-            result = llm.invoke(messages)
-            content_str = str(result.content).strip()
-
-            # Strip reasoning model think tags if present
-            if "</think>" in content_str:
-                content_str = content_str.split("</think>")[-1].strip()
-
-            if content_str.startswith("```"):
-                parts = content_str.split("```")
-                if len(parts) >= 2:
-                    content_str = parts[1]
-                    if content_str.startswith("json"):
-                        content_str = content_str[4:].strip()
-
-            rich_data = None
+            success_result = llm.invoke(messages)
+        except Exception as e1:
+            logger.warning("Primary Groq model failed: %s. Trying fallback model llama-3.1-8b-instant...", e1)
+            # 2. Try fallback active model llama-3.1-8b-instant
             try:
-                import json
-                parsed = json.loads(content_str)
-                if isinstance(parsed, dict):
-                    text_response = parsed.get("response") or content_str
-                    rich_data = parsed.get("rich_data")
-                else:
-                    text_response = content_str
-            except Exception:
-                text_response = content_str
+                from langchain_groq import ChatGroq
+                fallback_client = ChatGroq(
+                    model="llama-3.1-8b-instant",
+                    groq_api_key=GROQ_API_KEY,
+                    max_tokens=LLM_MAX_OUTPUT_TOKENS,
+                    timeout=LLM_TIMEOUT_SECONDS,
+                )
+                success_result = fallback_client.invoke(messages)
+            except Exception as e2:
+                logger.exception("Fallback Groq model also failed: %s", e2)
+                mock_text, mock_rich = get_mock_response(user_message, category)
+                return jsonify({"response": mock_text, "rich_data": mock_rich, "groq_error": str(e2)}), 200
 
-            return jsonify({"response": text_response, "rich_data": rich_data}), 200
-        except Exception as e:
-            logger.exception("Groq GenAI invocation failed: %s", e)
-            return jsonify({
-                "response": f"Groq AI Error: {str(e)}. (Please verify your GROQ_API_KEY in Render settings)",
-                "groq_error": str(e),
-                "rich_data": None
-            }), 200
+        content_str = str(success_result.content).strip()
+
+        # Strip reasoning model think tags if present
+        if "</think>" in content_str:
+            content_str = content_str.split("</think>")[-1].strip()
+
+        if content_str.startswith("```"):
+            parts = content_str.split("```")
+            if len(parts) >= 2:
+                content_str = parts[1]
+                if content_str.startswith("json"):
+                    content_str = content_str[4:].strip()
+
+        rich_data = None
+        try:
+            import json
+            parsed = json.loads(content_str)
+            if isinstance(parsed, dict):
+                text_response = parsed.get("response") or content_str
+                rich_data = parsed.get("rich_data")
+            else:
+                text_response = content_str
+        except Exception:
+            text_response = content_str
+
+        return jsonify({"response": text_response, "rich_data": rich_data}), 200
 
     elif structured_llm:
         try:
