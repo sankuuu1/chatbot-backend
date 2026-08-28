@@ -90,22 +90,27 @@ class ChatOutput(BaseModel):
 
 # 1. Try Groq provider if selected or key is present
 if LLM_PROVIDER == "groq" or (LLM_PROVIDER == "auto" and GROQ_API_KEY):
-    try:
-        from langchain_groq import ChatGroq
+    from langchain_groq import ChatGroq
+    groq_models_to_try = [GROQ_MODEL, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]
+    # remove duplicates
+    groq_models_to_try = list(dict.fromkeys(groq_models_to_try))
 
-        llm = ChatGroq(
-            model=GROQ_MODEL,
-            groq_api_key=GROQ_API_KEY,
-            max_tokens=LLM_MAX_OUTPUT_TOKENS,
-            timeout=LLM_TIMEOUT_SECONDS,
-        )
-        structured_llm = llm.with_structured_output(ChatOutput)
-        active_provider = "groq"
-        active_model = GROQ_MODEL
-        logger.info("Groq GenAI model initialized (%s)", GROQ_MODEL)
-    except Exception as e:
-        init_error = f"Error initializing Groq GenAI: {e}"
-        logger.exception("Failed to initialize Groq model")
+    for model_candidate in groq_models_to_try:
+        try:
+            llm = ChatGroq(
+                model=model_candidate,
+                groq_api_key=GROQ_API_KEY,
+                max_tokens=LLM_MAX_OUTPUT_TOKENS,
+                timeout=LLM_TIMEOUT_SECONDS,
+            )
+            structured_llm = llm.with_structured_output(ChatOutput)
+            active_provider = "groq"
+            active_model = model_candidate
+            logger.info("Groq GenAI model initialized (%s)", model_candidate)
+            break
+        except Exception as e:
+            init_error = f"Error initializing Groq model {model_candidate}: {e}"
+            logger.exception("Failed to initialize Groq candidate %s", model_candidate)
 
 # 2. Try Gemini provider if Groq wasn't initialized
 if not llm and (LLM_PROVIDER in ("gemini", "auto") and GOOGLE_API_KEY):
