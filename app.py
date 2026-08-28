@@ -40,7 +40,7 @@ limiter = Limiter(get_remote_address, app=app, default_limits=[])
 
 # --- LangChain / LLM Setup (Groq & Gemini) ---
 GROQ_API_KEY = os.getenv("GROQ_API_KEY") or os.getenv("GROQ-API-KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "auto").lower()
@@ -91,7 +91,7 @@ class ChatOutput(BaseModel):
 # 1. Try Groq provider if selected or key is present
 if LLM_PROVIDER == "groq" or (LLM_PROVIDER == "auto" and GROQ_API_KEY):
     from langchain_groq import ChatGroq
-    groq_models_to_try = [GROQ_MODEL, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]
+    groq_models_to_try = [GROQ_MODEL, "llama-3.1-8b-instant", "llama-3.2-3b-preview", "llama-3.3-70b-versatile", "mixtral-8x7b-32768"]
     # remove duplicates
     groq_models_to_try = list(dict.fromkeys(groq_models_to_try))
 
