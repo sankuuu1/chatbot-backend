@@ -1,9 +1,8 @@
-flask==3.1.3
-flask-cors==6.0.5
-flask-limiter==4.1.1
-python-dotenv==1.2.2
-langchain-google-genai==4.3.2
-langchain-groq==0.2.5
-pydantic==2.13.4
-gunicorn==26.0.0
-
+flask
+flask-cors
+flask-limiter
+python-dotenv
+langchain-google-genai
+langchain-groq
+pydantic
+gunicorn
