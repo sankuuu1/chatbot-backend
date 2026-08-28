@@ -167,10 +167,54 @@ def build_messages(user_message: str, category: str, history: list[dict]) -> lis
 
 # --- Mock Service (used when GOOGLE_API_KEY is not configured) ---
 def get_mock_response(message, category):
-    message = message.lower()
-
-    text_response = "माफ करा, मला हे समजले नाही. कृपया पुन्हा सांगाल का?"
+    message = message.lower().strip()
     rich_data = None
+
+    if any(w in message for w in ["hi", "hello", "hey", "namaskar", "नमस्कार", "हाय", "हेल्प", "help", "बंधू", "bandhu"]):
+        text_response = "नमस्कार! मी बंधू. 🙏 सांगा, आज मी तुम्हाला कशी मदत करू शकतो? (तुम्ही मला शेती, कीड, हवामान किंवा अभ्यासाविषयी विचारू शकता)."
+
+    elif "पाऊस" in message or "weather" in message or "हवामान" in message:
+        text_response = "नागपूर व विदर्भ भागात आज ढगाळ वातावरण असून संध्याकाळी पावसाची ७०% शक्यता आहे. शेतकऱ्यांनी फवारणी आज टाळावी."
+
+    elif "कापूस" in message or "बाजारभाव" in message or "bajarbhav" in message:
+        text_response = "आज विदर्भातील बाजार समित्यांमध्ये उत्तम प्रतीच्या कापसाचा सरासरी बाजारभाव ₹६,९०० ते ₹७,४५० प्रति क्विंटल दरम्यान आहे."
+
+    elif category == "education" or "ganit" in message or "triangle" in message or "क्षेत्रफळ" in message:
+        text_response = "त्रिकोणाचे क्षेत्रफळ काढणे खूप सोपे आहे! खालील माहिती नीट समजून घ्या:"
+        rich_data = {
+            "type": "education",
+            "title": "त्रिकोणाचे क्षेत्रफळ (Area of a Triangle)",
+            "diagram_type": "triangle",
+            "content": [
+                {"label": "पाया (Base)", "desc": "त्रिकोणाची खालची बाजू."},
+                {"label": "उंची (Height)", "desc": "खालच्या बाजूपासून वरच्या टोकापर्यंतचे उभे अंतर."},
+            ],
+            "formula": "१/२ × पाया × उंची",
+        }
+
+    elif category == "farming" or "kapus" in message or "kid" in message:
+        text_response = "तुमच्या कपाशीवर 'पांढरी माशी' किंवा 'तुडतुडे' यांचा प्रादुर्भाव दिसतो आहे. यासाठी तुम्ही खालील उपाय करू शकता:"
+        rich_data = {
+            "type": "farming",
+            "title": "कापसावरील कीड नियंत्रण",
+            "points": [
+                "पिवळे चिकट सापळे एकरी १० याप्रमाणे लावावेत.",
+                "प्रादुर्भाव जास्त असल्यास निंबोळी अर्काची फवारणी करावी.",
+                "कृषी केंद्रातून सल्ला घेऊनच रासायनिक औषधांचा वापर करा.",
+            ],
+        }
+
+    elif category == "health":
+        text_response = "तुमची लक्षणे सांगा, मी प्राथमिक तपासणी करू शकतो."
+        rich_data = {
+            "type": "health",
+            "title": "आरोग्य सल्ला",
+            "points": ["ताप आल्यास पाणी भरपूर प्या.", "विश्रांती घ्या."],
+        }
+    else:
+        text_response = "नमस्कार! मी बंधू. सांगा, आज मी तुम्हाला कशी मदत करू शकतो? तुम्ही मला शेती, कीड, हवामान किंवा अभ्यासाविषयी विचारू शकता."
+
+    return text_response, rich_data
 
     if category == "education" or "ganit" in message or "triangle" in message:
         text_response = "त्रिकोणाचे क्षेत्रफळ काढणे खूप सोपे आहे! खालील माहिती नीट समजून घ्या:"
@@ -233,6 +277,15 @@ def chat():
         history = []
 
     logger.info("Chat request: category=%s message_len=%d provider=%s", category, len(user_message), active_provider)
+
+    # Fast-path instant response for greetings (< 5ms response time!)
+    clean_msg = user_message.strip().lower()
+    greetings = {"hi", "hello", "hey", "namaskar", "नमस्कार", "हाय", "हेल्प", "help", "बंधू", "bandhu"}
+    if clean_msg in greetings or clean_msg.startswith(("hi ", "hello ", "hey ", "नमस्कार", "हाय ")):
+        return jsonify({
+            "response": "नमस्कार! मी बंधू. 🙏\nसांगा, आज मी तुम्हाला कशी मदत करू शकतो? तुम्ही मला शेती, कीड, हवामान, बाजारभाव किंवा अभ्यासाविषयी काहीही विचारू शकता.",
+            "rich_data": None
+        }), 200
 
     if active_provider == "groq" and llm:
         try:
