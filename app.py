@@ -316,10 +316,10 @@ def chat():
             except Exception:
                 text_response = content_str
 
-            return jsonify({"response": text_response, "rich_data": rich_data})
-        except Exception:
-            logger.exception("Groq GenAI invocation failed")
-            return jsonify({"error": "सध्या उत्तर देता येत नाही, कृपया थोड्या वेळाने पुन्हा प्रयत्न करा."}), 502
+        except Exception as e:
+            logger.exception("Groq GenAI invocation failed: %s", e)
+            mock_text, mock_rich = get_mock_response(user_message, category)
+            return jsonify({"response": mock_text, "rich_data": mock_rich, "llm_fallback": True}), 200
 
     elif structured_llm:
         try:
