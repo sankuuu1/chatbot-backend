@@ -23,17 +23,15 @@ app = Flask(__name__)
 
 # --- CORS ---
 # Allow Firebase, Vercel, Localhost, or custom production domains seamlessly
-_default_origins = "http://localhost:5173,http://127.0.0.1:5173,https://bandhu-ai-566ed.web.app,https://bandhu-ai-566ed.firebaseapp.com"
+_default_origins = "http://localhost:5173,http://127.0.0.1:5173,https://bandhu-ai-566ed.web.app,https://bandhu-ai-566ed.firebaseapp.com,https://bandhuai.vercel.app"
 frontend_origins = [
     origin.strip()
     for origin in os.getenv("FRONTEND_URL", _default_origins).split(",")
     if origin.strip()
 ]
-# If FRONTEND_URL is set to "*", allow all origins
-if "*" in frontend_origins:
-    CORS(app, resources={r"/*": {"origins": "*"}})
-else:
-    CORS(app, resources={r"/*": {"origins": frontend_origins}}, supports_credentials=True)
+
+# Allow CORS for all origins (or listed frontends) so Vercel & Firebase never get blocked
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # --- Rate limiting ---
 limiter = Limiter(get_remote_address, app=app, default_limits=[])
