@@ -16,6 +16,7 @@ def chat():
     user_message = data.get("message")
     category = data.get("category") or "general"
     history = data.get("history") or []
+    language = data.get("language") or "mr"
 
     if not isinstance(user_message, str) or not user_message.strip():
         return jsonify({"error": "Message is required"}), 400
@@ -24,9 +25,8 @@ def chat():
     if category not in config.ALLOWED_CATEGORIES:
         category = "general"
 
-    res_payload, status_code = generate_chat_response(user_message, category, history)
+    res_payload, status_code = generate_chat_response(user_message, category, history, language)
 
-    # Asynchronously log chat query and response to SQLite
     if status_code == 200 and "response" in res_payload:
         log_chat(user_message, category, res_payload["response"])
 
@@ -43,6 +43,7 @@ def transcribe():
 
     audio_file = request.files["file"]
     file_bytes = audio_file.read()
+    language = request.form.get("language", "mr")
 
     try:
         text = transcribe_audio_file(file_bytes, audio_file.filename or "audio.webm")
