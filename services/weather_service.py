@@ -1,3 +1,12 @@
+"""
+Bandhu AI - Weather & Daily Agricultural Info Service
+======================================================
+
+Fetches live 5-day weather forecast from Open-Meteo API for Nagpur, Maharashtra.
+Translates WMO weather codes into regional Marathi terms, rain risk advisories,
+and curated daily news/scheme articles.
+"""
+
 import datetime
 import json
 import logging
@@ -5,6 +14,7 @@ import urllib.request
 
 logger = logging.getLogger("bandhu.weather")
 
+# WMO Weather Code to Marathi Descriptions and Emojis Mapping
 WEATHER_CODE_MAP = {
     0: ("निरभ्र आकाश (Clear sky)", "☀️"),
     1: ("मुख्यतः निरभ्र (Mainly clear)", "🌤️"),
@@ -28,12 +38,26 @@ WEATHER_CODE_MAP = {
 MARATHI_DAYS = ["सोम", "मंगळ", "बुध", "गुरु", "शुक्र", "शनि", "रवि"]
 
 
-def get_weather_info(weather_code: int):
+def get_weather_info(weather_code: int) -> tuple[str, str]:
+    """Returns Marathi weather condition string and emoji icon for WMO code."""
     return WEATHER_CODE_MAP.get(weather_code, ("ढगाळ वातावरण", "⛅"))
 
 
-def get_daily_info_payload(lat: float = 21.1458, lon: float = 79.0882, location_name: str = "नागपूर, महाराष्ट्र"):
-    """Fetches live 5-day weather forecast from Open-Meteo API and formats for Marathi UI."""
+def get_daily_info_payload(
+    lat: float = 21.1458,
+    lon: float = 79.0882,
+    location_name: str = "नागपूर, महाराष्ट्र",
+) -> dict:
+    """Fetches live 5-day forecast from Open-Meteo API and formats for Marathi UI.
+
+    Args:
+        lat (float): Latitude coordinate (default: 21.1458 Nagpur).
+        lon (float): Longitude coordinate (default: 79.0882 Nagpur).
+        location_name (str): Display location name string.
+
+    Returns:
+        dict: Complete daily info payload with weather, 5-day forecast, advisory, and articles.
+    """
     weather_data = {
         "location": location_name,
         "temperature": 30,

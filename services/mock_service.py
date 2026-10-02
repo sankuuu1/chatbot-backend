@@ -1,7 +1,28 @@
-def get_mock_response(message: str, category: str, language: str = "mr"):
+"""
+Bandhu AI - Mock Response Provider
+==================================
+
+Offline mock service providing structured fallback responses when external 
+AI providers (Groq / Gemini) are unavailable or during local testing.
+Supports Marathi, Hindi, and English.
+"""
+
+
+def get_mock_response(message: str, category: str, language: str = "mr") -> tuple[str, dict | None]:
+    """Generates localized fallback response and optional rich_data payload.
+
+    Args:
+        message (str): User input text message.
+        category (str): Query domain category key (farming, education, etc.).
+        language (str): Target language code ('mr', 'hi', or 'en').
+
+    Returns:
+        tuple[str, dict | None]: Response text and rich_data dictionary (if applicable).
+    """
     message = message.lower().strip()
     rich_data = None
 
+    # --- 1. ENGLISH MOCK RESPONSES ---
     if language == "en":
         if any(w in message for w in ["scheme", "yojana", "pm kisan", "subsidy", "insurance"]):
             text_response = "Here are the key agricultural government schemes available:"
@@ -29,6 +50,7 @@ def get_mock_response(message: str, category: str, language: str = "mr"):
         else:
             text_response = "Hello! I am Bandhu. I can help you with farming, market prices, weather, schemes, or education. How can I assist you?"
 
+    # --- 2. HINDI MOCK RESPONSES ---
     elif language == "hi":
         if any(w in message for w in ["योजना", "सरकारी", "yojana", "scheme", "पीएम किसान", "अनुदान", "बीमा"]):
             text_response = "प्रमुख किसान एवं कल्याणकारी सरकारी योजनाओं की जानकारी निम्नलिखित है:"
@@ -56,8 +78,8 @@ def get_mock_response(message: str, category: str, language: str = "mr"):
         else:
             text_response = "नमस्ते! मैं बंधु हूँ। 🙏 बताइए, आज मैं आपकी क्या सहायता कर सकता हूँ? आप कृषि, योजना, मौसम या पढ़ाई के बारे में पूछ सकते हैं।"
 
+    # --- 3. MARATHI MOCK RESPONSES (DEFAULT) ---
     else:
-        # Default Marathi
         if any(w in message for w in ["योजना", "सरकारी", "yojana", "scheme", "पीएम किसान", "नमो शेतकरी", "अनुदान", "विमा"]):
             text_response = "महाराष्ट्रातील प्रमुख शेतकरी व कल्याणकारी सरकारी योजनांची माहिती खालीलप्रमाणे आहे:"
             rich_data = {

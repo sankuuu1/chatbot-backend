@@ -1,4 +1,11 @@
-import os
+"""
+Bandhu AI - Speech-To-Text (STT) Service
+=========================================
+
+Provides high-accuracy voice transcription using Groq Whisper API (`whisper-large-v3-turbo`).
+Optimized for Marathi and Indian regional accents.
+"""
+
 import logging
 import requests
 from config import GROQ_API_KEY
@@ -7,7 +14,19 @@ logger = logging.getLogger("bandhu.stt")
 
 
 def transcribe_audio_file(file_bytes: bytes, filename: str = "audio.webm") -> str:
-    """Transcribes Marathi voice recording using Groq Whisper API."""
+    """Transcribes audio recording using Groq Whisper API.
+
+    Args:
+        file_bytes (bytes): Raw audio binary data.
+        filename (str): Name of the audio file (default: "audio.webm").
+
+    Returns:
+        str: Transcribed text string.
+
+    Raises:
+        ValueError: If GROQ_API_KEY is missing.
+        HTTPError: If Groq API request fails.
+    """
     if not GROQ_API_KEY:
         raise ValueError("GROQ_API_KEY not configured on server")
 

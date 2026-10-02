@@ -1,3 +1,12 @@
+"""
+Bandhu AI - LLM Orchestration & Prompting Engine
+=================================================
+
+Orchestrates AI response generation using Groq (LLaMA-3.3-70b / LLaMA-3.1-8b) 
+and Google Gemini GenAI providers, with automatic fallback handling to local mock service.
+Supports multilingual prompts for Marathi, Hindi, and English.
+"""
+
 import logging
 import config
 from models import ChatOutput
@@ -5,12 +14,14 @@ from services.mock_service import get_mock_response
 
 logger = logging.getLogger("bandhu.llm")
 
+# Global LLM Instances
 llm = None
 structured_llm = None
 active_provider = "mock"
 active_model = None
 init_error = None
 
+# Multilingual System Prompts for AI Persona "Bandhu"
 LANG_PROMPTS = {
     "mr": """You are "Bandhu" (बंधू), a warm, trustworthy assistant for rural Marathi-speaking users in India. \
 Always answer in simple, conversational Marathi. Never repeat the user's question back to them.
@@ -48,8 +59,10 @@ Only populate rich_data when it genuinely helps (a formula, a checklist). Leave 
 
 
 def init_llm_providers():
+    """Initializes Groq and Google GenAI LLM clients with candidate model fallbacks."""
     global llm, structured_llm, active_provider, active_model, init_error
 
+    # --- 1. Try Groq Initialization ---
     if config.LLM_PROVIDER == "groq" or (config.LLM_PROVIDER == "auto" and config.GROQ_API_KEY):
         try:
             from langchain_groq import ChatGroq
@@ -75,6 +88,7 @@ def init_llm_providers():
         except Exception as e:
             init_error = f"Groq package error: {e}"
 
+    # --- 2. Try Google Gemini Initialization ---
     if not llm and (config.LLM_PROVIDER in ("gemini", "auto") and config.GOOGLE_API_KEY):
         try:
             from langchain_google_genai import ChatGoogleGenerativeAI
@@ -93,6 +107,7 @@ def init_llm_providers():
             init_error = f"Error initializing Google GenAI: {e}"
             logger.exception("Failed to initialize Gemini model")
 
+    # --- 3. Fallback to Mock Mode ---
     if not llm:
         if not init_error:
             init_error = "No valid LLM API key (GROQ_API_KEY or GOOGLE_API_KEY) found."
@@ -100,8 +115,10 @@ def init_llm_providers():
 
 
 def build_messages(user_message: str, category: str, history: list[dict], language: str = "mr") -> list[tuple[str, str]]:
+    """Builds system, conversational history, and current turn prompt tuples for LangChain."""
     sys_prompt = LANG_PROMPTS.get(language, LANG_PROMPTS["mr"])
     messages = [("system", sys_prompt)]
+
     for turn in (history or [])[-config.MAX_HISTORY_TURNS:]:
         sender = turn.get("sender")
         text = turn.get("text")
@@ -109,24 +126,28 @@ def build_messages(user_message: str, category: str, history: list[dict], langua
             continue
         role = "human" if sender == "user" else "ai"
         messages.append((role, str(text)[:config.MAX_MESSAGE_LENGTH]))
+
     messages.append(("human", f"Category: {category}. Question: {user_message}"))
     return messages
 
 
-def generate_chat_response(user_message: str, category: str, history: list[dict], language: str = "mr"):
+def generate_chat_response(user_message: str, category: str, history: list[dict], language: str = "mr") -> tuple[dict, int]:
+    """Generates AI chat reply with structured rich_data payload."""
     clean_msg = user_message.strip().lower()
 
-    greetings_mr = {"hi", "hello", "hey", "namaskar", "नमस्कार", "हाय", "हेल्प", "help", "बंधू", "bandhu"}
-    if clean_msg in greetings_mr or clean_msg.startswith(("hi ", "hello ", "hey ", "नमस्कार", "हाय ")):
+    # Fast path: instant warm greeting matching requested language
+    greetings_keywords = {"hi", "hello", "hey", "namaskar", "नमस्कार", "हाय", "हेल्प", "help", "बंधू", "bandhu"}
+    if clean_msg in greetings_keywords or clean_msg.startswith(("hi ", "hello ", "hey ", "नमस्कार", "हाय ")):
         if language == "en":
             greeting_resp = "Hello! I am Bandhu. 🙏\nHow can I help you today? You can ask me about farming, crop pests, weather, market rates, or education."
         elif language == "hi":
             greeting_resp = "नमस्ते! मैं बंधु हूँ। 🙏\nबताइए, आज मैं आपकी क्या सहायता कर सकता हूँ? आप मुझसे कृषि, कीट नियंत्रण, मौसम, मंडी भाव या शिक्षा के बारे में पूछ सकते हैं।"
         else:
             greeting_resp = "नमस्कार! मी बंधू. 🙏\nसांगा, आज मी तुम्हाला कशी मदत करू शकतो? तुम्ही मला शेती, कीड, हवामान, बाजारभाव किंवा अभ्यासाविषयी काहीही विचारू शकता."
-        
+
         return {"response": greeting_resp, "rich_data": None}, 200
 
+    # Execute Groq LLM model call
     if active_provider == "groq" and llm:
         messages = build_messages(user_message.strip(), category, history, language)
         success_result = None
@@ -173,6 +194,7 @@ def generate_chat_response(user_message: str, category: str, history: list[dict]
 
         return {"response": text_response, "rich_data": rich_data}, 200
 
+    # Structured Output execution for Gemini or other structured LLMs
     elif structured_llm:
         try:
             messages = build_messages(user_message.strip(), category, history, language)
@@ -182,12 +204,15 @@ def generate_chat_response(user_message: str, category: str, history: list[dict]
         except Exception:
             logger.exception("GenAI invocation failed")
             return {"error": "Unable to process response currently."}, 502
+
+    # Offline Mock Fallback
     else:
         text_response, rich_data = get_mock_response(user_message, category, language)
         return {"response": text_response, "rich_data": rich_data}, 200
 
 
-def get_health_status():
+def get_health_status() -> dict:
+    """Returns runtime diagnostic information about active LLM providers."""
     return {
         "status": "active",
         "provider": active_provider,
