@@ -13,12 +13,13 @@ from config import GROQ_API_KEY
 logger = logging.getLogger("bandhu.stt")
 
 
-def transcribe_audio_file(file_bytes: bytes, filename: str = "audio.webm") -> str:
+def transcribe_audio_file(file_bytes: bytes, filename: str = "audio.webm", language: str = "mr") -> str:
     """Transcribes audio recording using Groq Whisper API.
 
     Args:
         file_bytes (bytes): Raw audio binary data.
         filename (str): Name of the audio file (default: "audio.webm").
+        language (str): ISO language code ("mr", "hi", "en", or None).
 
     Returns:
         str: Transcribed text string.
@@ -39,11 +40,12 @@ def transcribe_audio_file(file_bytes: bytes, filename: str = "audio.webm") -> st
     }
     data = {
         "model": "whisper-large-v3-turbo",
-        "language": "mr",
         "response_format": "json",
     }
+    if language in ["mr", "hi", "en"]:
+        data["language"] = language
 
-    response = requests.post(url, headers=headers, files=files, data=data, timeout=15)
+    response = requests.post(url, headers=headers, files=files, data=data, timeout=20)
     response.raise_for_status()
     result = response.json()
     return result.get("text", "").strip()

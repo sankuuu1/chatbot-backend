@@ -63,9 +63,10 @@ def transcribe():
 
     audio_file = request.files["file"]
     file_bytes = audio_file.read()
+    language = request.form.get("language") or "mr"
 
     try:
-        text = transcribe_audio_file(file_bytes, audio_file.filename or "audio.webm")
-        return jsonify({"text": text}), 200
+        text = transcribe_audio_file(file_bytes, audio_file.filename or "audio.webm", language=language)
+        return jsonify({"text": text, "status": "success"}), 200
     except Exception as e:
         return jsonify({"error": f"Transcription failed: {str(e)}"}), 500
