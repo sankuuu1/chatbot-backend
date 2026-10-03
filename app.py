@@ -20,6 +20,7 @@ from routes.chat import chat_bp
 from routes.daily_info import daily_info_bp
 from routes.settings import settings_bp
 from routes.mandi import mandi_bp
+from routes.schemes import schemes_bp
 
 # ==============================================================================
 # LOGGING CONFIGURATION
@@ -51,6 +52,7 @@ app.register_blueprint(chat_bp)
 app.register_blueprint(daily_info_bp)
 app.register_blueprint(settings_bp)
 app.register_blueprint(mandi_bp)
+app.register_blueprint(schemes_bp)
 
 
 # ==============================================================================
