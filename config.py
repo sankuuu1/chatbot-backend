@@ -42,6 +42,7 @@ GROQ_API_KEY: str | None = os.getenv("GROQ_API_KEY") or os.getenv("GROQ-API-KEY"
 GROQ_MODEL: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 GOOGLE_API_KEY: str | None = os.getenv("GOOGLE_API_KEY")
 GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
+CEDA_API_KEY: str = os.getenv("CEDA_API_KEY", "73efed17e89c0213ceb4c52e97ba4c97ad674b0f62829540ef29f5c53be6c2cc")
 LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "auto").lower()
 
 # ==============================================================================
