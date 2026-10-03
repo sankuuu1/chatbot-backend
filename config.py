@@ -39,7 +39,7 @@ FRONTEND_ORIGINS: list[str] = [
 # AI PROVIDERS & CREDENTIALS
 # ==============================================================================
 GROQ_API_KEY: str | None = os.getenv("GROQ_API_KEY") or os.getenv("GROQ-API-KEY")
-GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+GROQ_MODEL: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 GOOGLE_API_KEY: str | None = os.getenv("GOOGLE_API_KEY")
 GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
 LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "auto").lower()

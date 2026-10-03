@@ -58,6 +58,24 @@ Only populate rich_data when it genuinely helps (a formula, a checklist). Leave 
 }
 
 
+def get_available_groq_models(api_key: str) -> list[str]:
+    """Queries Groq API for available models in current organization."""
+    try:
+        import requests
+        res = requests.get(
+            "https://api.groq.com/openai/v1/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=5
+        )
+        if res.status_code == 200:
+            models_data = res.json().get("data", [])
+            chat_models = [m["id"] for m in models_data if not m["id"].startswith("whisper") and not m["id"].startswith("meta-llama/llama-prompt-guard")]
+            return chat_models
+    except Exception as e:
+        logger.warning("Could not fetch remote Groq models list: %s", e)
+    return []
+
+
 def init_llm_providers():
     """Initializes Groq and Google GenAI LLM clients with candidate model fallbacks."""
     global llm, structured_llm, active_provider, active_model, init_error
@@ -66,27 +84,53 @@ def init_llm_providers():
     if config.LLM_PROVIDER == "groq" or (config.LLM_PROVIDER == "auto" and config.GROQ_API_KEY):
         try:
             from langchain_groq import ChatGroq
-            groq_models = [config.GROQ_MODEL, "llama-3.3-70b-versatile", "llama3-70b-8192", "llama3-8b-8192", "mixtral-8x7b-32768"]
-            groq_models = list(dict.fromkeys([m for m in groq_models if m]))
+            available_remote = get_available_groq_models(config.GROQ_API_KEY)
+            
+            preferred_order = [
+                config.GROQ_MODEL,
+                "openai/gpt-oss-120b",
+                "openai/gpt-oss-20b",
+                "llama-3.3-70b-versatile",
+                "llama-3.1-8b-instant",
+                "llama3-70b-8192",
+                "llama3-8b-8192",
+                "mixtral-8x7b-32768"
+            ]
+
+            groq_models = []
+            # First match available remote models in preferred order
+            for pref in preferred_order:
+                if pref and pref in available_remote and pref not in groq_models:
+                    groq_models.append(pref)
+            # Add remaining remote models
+            for rem in available_remote:
+                if rem not in groq_models:
+                    groq_models.append(rem)
+            # Fallback to preferred list if remote check was empty
+            for pref in preferred_order:
+                if pref and pref not in groq_models:
+                    groq_models.append(pref)
 
             for model_candidate in groq_models:
                 try:
-                    llm = ChatGroq(
+                    candidate_llm = ChatGroq(
                         model=model_candidate,
                         groq_api_key=config.GROQ_API_KEY,
                         max_tokens=config.LLM_MAX_OUTPUT_TOKENS,
                         timeout=config.LLM_TIMEOUT_SECONDS,
                     )
-                    structured_llm = llm.with_structured_output(ChatOutput)
+                    llm = candidate_llm
                     active_provider = "groq"
                     active_model = model_candidate
-                    logger.info("Groq GenAI model initialized (%s)", model_candidate)
+                    logger.info("Groq GenAI model initialized successfully with candidate (%s)", model_candidate)
                     break
                 except Exception as e:
                     init_error = f"Error initializing Groq model {model_candidate}: {e}"
-                    logger.exception("Failed Groq candidate %s", model_candidate)
+                    logger.warning("Failed Groq candidate %s: %s", model_candidate, e)
         except Exception as e:
             init_error = f"Groq package error: {e}"
+            logger.exception("Groq init failed")
+
 
     # --- 2. Try Google Gemini Initialization ---
     if not llm and (config.LLM_PROVIDER in ("gemini", "auto") and config.GOOGLE_API_KEY):
@@ -154,20 +198,28 @@ def generate_chat_response(user_message: str, category: str, history: list[dict]
         try:
             success_result = llm.invoke(messages)
         except Exception as e1:
-            logger.warning("Primary Groq model failed: %s. Trying fallback...", e1)
-            try:
-                from langchain_groq import ChatGroq
-                fallback_client = ChatGroq(
-                    model="llama-3.3-70b-versatile",
-                    groq_api_key=config.GROQ_API_KEY,
-                    max_tokens=config.LLM_MAX_OUTPUT_TOKENS,
-                    timeout=config.LLM_TIMEOUT_SECONDS,
-                )
-                success_result = fallback_client.invoke(messages)
-            except Exception as e2:
-                logger.exception("Fallback Groq model also failed: %s", e2)
+            logger.warning("Primary Groq model failed: %s. Trying candidate fallbacks...", e1)
+            candidate_fallbacks = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+            for fb_model in candidate_fallbacks:
+                if fb_model == active_model:
+                    continue
+                try:
+                    from langchain_groq import ChatGroq
+                    fallback_client = ChatGroq(
+                        model=fb_model,
+                        groq_api_key=config.GROQ_API_KEY,
+                        max_tokens=config.LLM_MAX_OUTPUT_TOKENS,
+                        timeout=config.LLM_TIMEOUT_SECONDS,
+                    )
+                    success_result = fallback_client.invoke(messages)
+                    if success_result and success_result.content:
+                        break
+                except Exception as fb_err:
+                    logger.warning("Fallback Groq model %s failed: %s", fb_model, fb_err)
+
+            if not success_result:
                 mock_text, mock_rich = get_mock_response(user_message, category, language)
-                return {"response": mock_text, "rich_data": mock_rich, "groq_error": str(e2)}, 200
+                return {"response": mock_text, "rich_data": mock_rich, "groq_error": str(e1)}, 200
 
         content_str = str(success_result.content).strip()
         if "</think>" in content_str:
